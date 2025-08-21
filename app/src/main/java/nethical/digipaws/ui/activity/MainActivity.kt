@@ -110,6 +110,277 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun copyApiUri(obj: org.json.JSONObject, skip: Boolean) {
+        val id = obj.optString("id")
+        if (id.isNullOrEmpty()) return
+        val action = if (skip) "skip" else "induce"
+        val uri = "digipaws://api/phone_lock?action=${action}&id=${id}"
+        try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("DigiPaws API", uri))
+            val msg = if (skip) nethical.digipaws.R.string.copied_skip_uri else nethical.digipaws.R.string.copied_induce_uri
+            android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) { }
+    }
+
+    private fun setupPhoneLock() {
+        val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
+        val enabled = sp.getBoolean("enabled", false)
+        binding.switchEnablePhoneLock.isChecked = enabled
+
+        binding.switchEnablePhoneLock.setOnCheckedChangeListener { _, isChecked ->
+            sp.edit().putBoolean("enabled", isChecked).apply()
+            sendRefreshRequest(nethical.digipaws.services.GeneralFeaturesService.INTENT_ACTION_REFRESH_PHONE_LOCK)
+        }
+
+        binding.btnConfigurePhoneLock.setOnClickListener {
+            val intent = Intent(this, nethical.digipaws.ui.activity.PhoneLockScheduleEditorActivity::class.java)
+            startActivity(intent)
+        }
+
+        // Initial render
+        renderPhoneLockSchedules()
+    }
+
+    // onResume consolidated below
+
+    private fun renderPhoneLockSchedules() {
+        val container = binding.phoneLockSchedulesContainer
+        container.removeAllViews()
+        val prefs = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val arrStr = prefs.getString("schedules", "[]")
+        val schedules = try { org.json.JSONArray(arrStr) } catch (_: Exception) { org.json.JSONArray() }
+        if (schedules.length() == 0) {
+            val tv = android.widget.TextView(this)
+            tv.text = getString(nethical.digipaws.R.string.no_schedules)
+            tv.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            container.addView(tv)
+            return
+        }
+        for (i in 0 until schedules.length()) {
+            val obj = schedules.optJSONObject(i) ?: continue
+            container.addView(createScheduleCard(obj))
+        }
+    }
+
+    private fun todayKey(): String {
+        val fmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+        return fmt.format(java.util.Date())
+    }
+
+    private fun dayOfWeekBit(cal: java.util.Calendar): Int {
+        return when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.SUNDAY -> 0
+            java.util.Calendar.MONDAY -> 1
+            java.util.Calendar.TUESDAY -> 2
+            java.util.Calendar.WEDNESDAY -> 3
+            java.util.Calendar.THURSDAY -> 4
+            java.util.Calendar.FRIDAY -> 5
+            java.util.Calendar.SATURDAY -> 6
+            else -> 0
+        }
+    }
+
+    private fun isScheduleActiveToday(obj: org.json.JSONObject): Boolean {
+        val sp = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val id = obj.optString("id")
+        val today = todayKey()
+        val skipToday = try { org.json.JSONObject(sp.getString("skip_today", "{}")) } catch (_: Exception) { org.json.JSONObject() }
+        val forceToday = try { org.json.JSONObject(sp.getString("force_today", "{}")) } catch (_: Exception) { org.json.JSONObject() }
+        if (today == forceToday.optString(id, "")) return true
+        if (today == skipToday.optString(id, "")) return false
+        if (!obj.optBoolean("enabled", true)) return false
+
+        val mode = obj.optString("mode")
+        return if (mode == "interval") {
+            val cal = java.util.Calendar.getInstance()
+            val bit = dayOfWeekBit(cal)
+            val daysMask = obj.optInt("daysMask", 0)
+            // Active today if no mask (everyday) or mask includes today
+            (daysMask == 0) || (((daysMask shr bit) and 1) == 1)
+        } else {
+            // Duration mode: active today only if there is an active session that ends in the future and on the same day
+            val activeStr = sp.getString("active_sessions", "{}")
+            val active = try { org.json.JSONObject(activeStr) } catch (_: Exception) { org.json.JSONObject() }
+            val endAt = active.optLong(id, 0L)
+            if (endAt <= System.currentTimeMillis()) {
+                false
+            } else {
+                val endCal = java.util.Calendar.getInstance().apply { timeInMillis = endAt }
+                val nowCal = java.util.Calendar.getInstance()
+                endCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR) &&
+                        endCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR)
+            }
+        }
+    }
+
+    private fun createScheduleCard(obj: org.json.JSONObject): android.view.View {
+        val ctx = this
+        val card = com.google.android.material.card.MaterialCardView(ctx)
+        val lp = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = (8 * resources.displayMetrics.density).toInt()
+        card.layoutParams = lp
+        val bg = com.google.android.material.color.MaterialColors.getColor(card, com.google.android.material.R.attr.colorSurfaceContainerLow)
+        card.setCardBackgroundColor(bg)
+        card.strokeWidth = 0
+        card.radius = 12f
+        card.setContentPadding(24, 16, 24, 16)
+
+        val vbox = android.widget.LinearLayout(ctx)
+        vbox.orientation = android.widget.LinearLayout.VERTICAL
+        card.addView(vbox)
+
+        val titleRow = android.widget.LinearLayout(ctx)
+        titleRow.orientation = android.widget.LinearLayout.HORIZONTAL
+        titleRow.layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        vbox.addView(titleRow)
+
+        // Indicator lamp: green if active today, red otherwise
+        val indicator = android.view.View(ctx)
+        val d = resources.displayMetrics.density
+        val indSize = (10 * d).toInt()
+        val indLp = android.widget.LinearLayout.LayoutParams(indSize, indSize)
+        indLp.rightMargin = (8 * d).toInt()
+        indicator.layoutParams = indLp
+        val activeToday = isScheduleActiveToday(obj)
+        val color = if (activeToday) android.graphics.Color.parseColor("#2e7d32") else android.graphics.Color.parseColor("#c62828")
+        val dot = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(color)
+        }
+        indicator.background = dot
+        titleRow.addView(indicator)
+
+        val tvName = android.widget.TextView(ctx)
+        tvName.text = obj.optString("name")
+        tvName.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+        val nameLp = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        tvName.layoutParams = nameLp
+        titleRow.addView(tvName)
+
+        val swEnabled = com.google.android.material.materialswitch.MaterialSwitch(ctx)
+        swEnabled.isChecked = obj.optBoolean("enabled", true)
+        titleRow.addView(swEnabled)
+
+        val tvSummary = android.widget.TextView(ctx)
+        tvSummary.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+        tvSummary.text = buildScheduleSummary(obj)
+        vbox.addView(tvSummary)
+
+        val actions = android.widget.LinearLayout(ctx)
+        actions.orientation = android.widget.LinearLayout.HORIZONTAL
+        actions.layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        actions.setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+        vbox.addView(actions)
+
+        // Start button for Duration mode only
+        if (obj.optString("mode") == "duration") {
+            val btnStart = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+            btnStart.text = getString(nethical.digipaws.R.string.start_now)
+            btnStart.setOnClickListener { startDurationNow(obj) }
+            actions.addView(btnStart)
+        }
+
+        // Copy API URIs (Skip / Induce)
+        // trailing spacer already added above; no duplicate
+
+        val btnCopySkip = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        btnCopySkip.text = getString(nethical.digipaws.R.string.copy_skip_uri)
+        btnCopySkip.setOnClickListener { copyApiUri(obj, true) }
+        val lp1 = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp1.marginEnd = (8 * d).toInt()
+        btnCopySkip.layoutParams = lp1
+        actions.addView(btnCopySkip)
+
+        val btnCopyInduce = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        btnCopyInduce.text = getString(nethical.digipaws.R.string.copy_induce_uri)
+        btnCopyInduce.setOnClickListener { copyApiUri(obj, false) }
+        actions.addView(btnCopyInduce)
+
+        val spacer = android.view.View(ctx)
+        spacer.layoutParams = android.widget.LinearLayout.LayoutParams(0, 0, 1f)
+        actions.addView(spacer)
+
+        val btnEdit = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        btnEdit.text = getString(nethical.digipaws.R.string.edit)
+        btnEdit.setOnClickListener { editSchedule(obj) }
+        actions.addView(btnEdit)
+
+        val btnDelete = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        btnDelete.text = getString(nethical.digipaws.R.string.delete)
+        btnDelete.setOnClickListener { deleteSchedule(obj) }
+        actions.addView(btnDelete)
+
+        swEnabled.setOnCheckedChangeListener { _, isChecked ->
+            obj.put("enabled", isChecked)
+            upsertSchedule(obj)
+        }
+
+        return card
+    }
+
+    private fun buildScheduleSummary(obj: org.json.JSONObject): String {
+        val mode = obj.optString("mode")
+        val daysMask = obj.optInt("daysMask", 0)
+        val days = listOf("Mon","Tue","Wed","Thu","Fri","Sat","Sun").mapIndexed { idx, s -> if ((daysMask and (1 shl idx)) != 0) s else null }.filterNotNull().joinToString(" ")
+        return if (mode == "duration") {
+            val d = obj.optInt("durationMin", 15)
+            "Duration: ${'$'}d min | ${'$'}days"
+        } else {
+            val s = obj.optInt("startMin", 0)
+            val e = obj.optInt("endMin", 0)
+            val sh = s / 60; val sm = s % 60; val eh = e / 60; val em = e % 60
+            String.format("%02d:%02d - %02d:%02d | %s", sh, sm, eh, em, days)
+        }
+    }
+
+    private fun upsertSchedule(obj: org.json.JSONObject) {
+        val prefs = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val arrStr = prefs.getString("schedules", "[]")
+        val arr = try { org.json.JSONArray(arrStr) } catch (_: Exception) { org.json.JSONArray() }
+        val id = obj.optString("id")
+        var replaced = false
+        for (i in 0 until arr.length()) {
+            val it = arr.optJSONObject(i) ?: continue
+            if (it.optString("id") == id) { arr.put(i, obj); replaced = true; break }
+        }
+        if (!replaced) arr.put(obj)
+        prefs.edit().putString("schedules", arr.toString()).apply()
+    }
+
+    private fun deleteSchedule(obj: org.json.JSONObject) {
+        val prefs = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val arrStr = prefs.getString("schedules", "[]")
+        val arr = try { org.json.JSONArray(arrStr) } catch (_: Exception) { org.json.JSONArray() }
+        val id = obj.optString("id")
+        val newArr = org.json.JSONArray()
+        for (i in 0 until arr.length()) {
+            val it = arr.optJSONObject(i) ?: continue
+            if (it.optString("id") != id) newArr.put(it)
+        }
+        prefs.edit().putString("schedules", newArr.toString()).apply()
+        renderPhoneLockSchedules()
+    }
+
+    private fun editSchedule(obj: org.json.JSONObject) {
+        val intent = Intent(this, nethical.digipaws.ui.activity.PhoneLockScheduleEditorActivity::class.java)
+        intent.putExtra("schedule_id", obj.optString("id"))
+        startActivity(intent)
+    }
+
+    private fun startDurationNow(obj: org.json.JSONObject) {
+        val duration = obj.optInt("durationMin", 15)
+        val endAt = System.currentTimeMillis() + duration * 60_000L
+        val prefs = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val activeStr = prefs.getString("active_sessions", "{}")
+        val json = try { org.json.JSONObject(activeStr) } catch (_: Exception) { org.json.JSONObject() }
+        json.put(obj.optString("id"), endAt)
+        prefs.edit().putString("active_sessions", json.toString()).apply()
+        // Nudge service to refresh behavior
+        sendBroadcast(Intent(nethical.digipaws.services.GeneralFeaturesService.INTENT_ACTION_REFRESH_PHONE_LOCK))
+        android.widget.Toast.makeText(this, nethical.digipaws.R.string.phone_locked_now, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
@@ -148,6 +419,9 @@ class MainActivity : AppCompatActivity() {
         setupActivityLaunchers()
         setupClickListeners()
 
+        setupAntiUninstallToggles()
+        setupPhoneLock()
+
         Shizuku.addBinderReceivedListenerSticky(BINDER_RECEIVED_LISTENER);
 
         if (!isFirstLaunchComplete()) {
@@ -155,7 +429,33 @@ class MainActivity : AppCompatActivity() {
             intent.putExtra("fragment", WelcomeFragment.FRAGMENT_ID)
             startActivity(intent, options.toBundle())
         }
+
         showDonationDialog()
+    }
+
+    private fun setupAntiUninstallToggles() {
+        val sp = getSharedPreferences("anti_uninstall", Context.MODE_PRIVATE)
+
+        // Load saved states
+        binding.switchBlockAppsSettings.isChecked = sp.getBoolean("block_apps_settings", false)
+        binding.switchBlockDnsSettings.isChecked = sp.getBoolean("block_dns_settings", false)
+        binding.switchBlockLanguageSettings.isChecked = sp.getBoolean("block_language_settings", false)
+
+        // Save on change and notify service to refresh behavior
+        binding.switchBlockAppsSettings.setOnCheckedChangeListener { _, isChecked ->
+            sp.edit().putBoolean("block_apps_settings", isChecked).apply()
+            sendRefreshRequest(GeneralFeaturesService.INTENT_ACTION_REFRESH_ANTI_UNINSTALL)
+        }
+
+        binding.switchBlockDnsSettings.setOnCheckedChangeListener { _, isChecked ->
+            sp.edit().putBoolean("block_dns_settings", isChecked).apply()
+            sendRefreshRequest(GeneralFeaturesService.INTENT_ACTION_REFRESH_ANTI_UNINSTALL)
+        }
+
+        binding.switchBlockLanguageSettings.setOnCheckedChangeListener { _, isChecked ->
+            sp.edit().putBoolean("block_language_settings", isChecked).apply()
+            sendRefreshRequest(GeneralFeaturesService.INTENT_ACTION_REFRESH_ANTI_UNINSTALL)
+        }
     }
 
     override fun onDestroy() {
@@ -165,6 +465,8 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() {
         super.onResume()
+        // Ensure UI and permissions refresh
+        renderPhoneLockSchedules()
         checkPermissions()
     }
 
@@ -551,6 +853,10 @@ class MainActivity : AppCompatActivity() {
                     appBlockerSelectCheatHours.isEnabled = isAppBlockerOn
                 }
 
+                // Hide/Show panels based on whether feature is enabled
+                binding.focusModeCard.visibility = if (isAppBlockerOn) View.VISIBLE else View.GONE
+                binding.appBlockerCard.visibility = if (isAppBlockerOn) View.VISIBLE else View.GONE
+
                 // View Blocker
                 updateChip(
                     isViewBlockerOn, binding.viewBlockerStatusChip, binding.viewBlockerWarning
@@ -559,6 +865,7 @@ class MainActivity : AppCompatActivity() {
                     btnConfigViewblockerCheatHours.isEnabled = isViewBlockerOn
                     btnConfigViewblockerWarning.isEnabled = isViewBlockerOn
                 }
+                binding.viewBlockerCard.visibility = if (isViewBlockerOn) View.VISIBLE else View.GONE
 
                 // Keyword Blocker
                 updateChip(
@@ -571,6 +878,7 @@ class MainActivity : AppCompatActivity() {
                     btnManagePreinstalledKeywords.isEnabled = isKeywordBlockerOn
                     btnManageKeywordBlocker.isEnabled = isKeywordBlockerOn
                 }
+                binding.keywordBlockerCard.visibility = if (isKeywordBlockerOn) View.VISIBLE else View.GONE
 
                 // Usage Tracker
                 if (!isDisplayOverOtherAppsOn) {
@@ -592,6 +900,7 @@ class MainActivity : AppCompatActivity() {
                         btnConfigTracker.isEnabled = true
                     }
                 }
+                binding.usageTrackerCard.visibility = if (isUsageTrackerOn && isDisplayOverOtherAppsOn) View.VISIBLE else View.GONE
 
 
                 // General Settings
@@ -605,6 +914,9 @@ class MainActivity : AppCompatActivity() {
                     selectFocusBlockedApps.isEnabled = isAppBlockerOn
                     autoFocus.isEnabled = isAppBlockerOn
                 }
+
+                // Monochrome/Grayscale depends on GeneralFeaturesService and Shizuku
+                binding.monochromeCard.visibility = if (isGeneralSettingsOn) View.VISIBLE else View.GONE
 
                 // Anti-Uninstall settings
                 binding.btnUnlockAntiUninstall.isEnabled = isAntiUninstallOn

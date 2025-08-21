@@ -60,6 +60,24 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".ui.activity.PhoneLockConfigActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.activity.PhoneLockScheduleEditorActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.activity.ApiDeepLinkActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DigiPaws">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="digipaws" android:host="api" android:path="/phone_lock" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".ui.activity.LauncherActivity"
             android:exported="true"
             android:launchMode="singleTask" />

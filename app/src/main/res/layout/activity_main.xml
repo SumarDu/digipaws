@@ -83,6 +83,155 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/phone_lock_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <TextView
+                        style="@style/TextAppearance.Material3.TitleLarge"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/phone_lock"
+                        android:textStyle="bold"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toStartOf="@id/switch_enable_phone_lock"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintWidth_default="spread" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_enable_phone_lock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+                </androidx.constraintlayout.widget.ConstraintLayout>
+
+                <TextView
+                    android:id="@+id/phone_lock_desc"
+                    style="@style/TextAppearance.Material3.BodyMedium"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/phone_lock_desc" />
+
+                <Button
+                    android:id="@+id/btn_configure_phone_lock"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/add_schedule" />
+
+                <LinearLayout
+                    android:id="@+id/phone_lock_schedules_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/anti_uninstall_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <TextView
+                        style="@style/TextAppearance.Material3.TitleLarge"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/anti_uninstall"
+                        android:textStyle="bold"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toStartOf="@id/anti_uninstall_card_chip"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintWidth_default="spread" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/anti_uninstall_card_chip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/disabled"
+                        app:chipIcon="@drawable/baseline_warning_24"
+                        app:chipIconTint="@color/design_default_color_error"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+                </androidx.constraintlayout.widget.ConstraintLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_block_apps_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/block_apps_settings" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_block_dns_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/block_private_dns_settings" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_block_language_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/block_language_settings" />
+
+                <Button
+                    android:id="@+id/btn_unlock_anti_uninstall"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:enabled="false"
+                    android:text="@string/remove_anti_uninstall" />
+
+                <TextView
+                    android:id="@+id/anti_uninstall_warning"
+                    style="@style/TextAppearance.Material3.BodySmall"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/warning_general_settings"
+                    android:textAlignment="center"
+                    android:textColor="?attr/colorError" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/focus_mode_card"
@@ -471,7 +620,6 @@
                     android:enabled="false"
                     android:text="@string/manage_keyword_packs" />
 
-
                 <Button
                     android:id="@+id/btn_manage_keyword_blocker"
                     style="@style/Widget.Material3.Button.OutlinedButton"
@@ -480,7 +628,6 @@
                     android:layout_marginTop="8dp"
                     android:enabled="false"
                     android:text="@string/configure_blocker" />
-
 
                 <TextView
                     android:id="@+id/keyword_blocker_warning"
@@ -494,7 +641,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/usage_tracker_card"
             android:layout_width="match_parent"
@@ -506,7 +652,6 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/keyword_blocker_card">
-
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -550,7 +695,6 @@
                     android:enabled="false"
                     android:text="Reel stats" />
 
-
                 <Button
                     android:id="@+id/select_app_usage_stats"
                     style="@style/Widget.Material3.Button.OutlinedButton"
@@ -577,7 +721,6 @@
                     android:enabled="false"
                     android:text="@string/manage_overlay_trackers" />
 
-
                 <TextView
                     android:id="@+id/usage_tracker_warning"
                     style="@style/TextAppearance.Material3.BodySmall"
@@ -587,77 +730,6 @@
                     android:text="@string/warning_usage_tracker_settings"
                     android:textAlignment="center"
                     android:textColor="?attr/colorError" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/anti_uninstall_card"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/usage_tracker_card">
-
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
-
-                    <TextView
-                        style="@style/TextAppearance.Material3.TitleLarge"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/anti_uninstall"
-                        android:textStyle="bold"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@id/anti_uninstall_card_chip"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent"
-                        app:layout_constraintWidth_default="spread" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/anti_uninstall_card_chip"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/disabled"
-                        app:chipIcon="@drawable/baseline_warning_24"
-                        app:chipIconTint="@color/design_default_color_error"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-                <Button
-                    android:id="@+id/btn_unlock_anti_uninstall"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:enabled="false"
-                    android:text="@string/remove_anti_uninstall" />
-
-
-                <TextView
-                    android:id="@+id/anti_uninstall_warning"
-                    style="@style/TextAppearance.Material3.BodySmall"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/warning_general_settings"
-                    android:textAlignment="center"
-                    android:textColor="?attr/colorError" />
-
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
