@@ -108,6 +108,25 @@ class MainActivity : AppCompatActivity() {
             isShizukuBinderRecieved = true
             checkPermissions()
         }
+
+    }
+
+    private fun promptSetPhoneLockPassword() {
+        val et = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = getString(nethical.digipaws.R.string.enter_new_password)
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(nethical.digipaws.R.string.set_phone_lock_password)
+            .setView(et)
+            .setPositiveButton(nethical.digipaws.R.string.confirm) { _, _ ->
+                val pwd = et.text?.toString()?.trim().orEmpty()
+                val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
+                sp.edit().putString("emergency_password", pwd).apply()
+                android.widget.Toast.makeText(this, nethical.digipaws.R.string.password_updated, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(nethical.digipaws.R.string.cancel, null)
+            .show()
     }
 
     private fun copyApiUri(obj: org.json.JSONObject, skip: Boolean) {
@@ -136,6 +155,10 @@ class MainActivity : AppCompatActivity() {
         binding.btnConfigurePhoneLock.setOnClickListener {
             val intent = Intent(this, nethical.digipaws.ui.activity.PhoneLockScheduleEditorActivity::class.java)
             startActivity(intent)
+        }
+        // Set emergency password for Phone Lock (separate from anti-uninstall)
+        binding.btnSetPhoneLockPassword?.setOnClickListener {
+            promptSetPhoneLockPassword()
         }
 
         // Initial render
@@ -273,43 +296,33 @@ class MainActivity : AppCompatActivity() {
         actions.setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
         vbox.addView(actions)
 
-        // Start button for Duration mode only
-        if (obj.optString("mode") == "duration") {
-            val btnStart = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-            btnStart.text = getString(nethical.digipaws.R.string.start_now)
-            btnStart.setOnClickListener { startDurationNow(obj) }
-            actions.addView(btnStart)
+        val btnMore = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        btnMore.text = getString(nethical.digipaws.R.string.more)
+        actions.addView(btnMore)
+
+        btnMore.setOnClickListener { v ->
+            val popup = android.widget.PopupMenu(ctx, v)
+            // Dynamic menu according to mode
+            val menu = popup.menu
+            if (obj.optString("mode") == "duration") {
+                menu.add(0, 1, 0, getString(nethical.digipaws.R.string.start_now))
+            }
+            menu.add(0, 2, 1, getString(nethical.digipaws.R.string.copy_skip_uri))
+            menu.add(0, 3, 2, getString(nethical.digipaws.R.string.copy_induce_uri))
+            menu.add(0, 4, 3, getString(nethical.digipaws.R.string.edit))
+            menu.add(0, 5, 4, getString(nethical.digipaws.R.string.delete))
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> startDurationNow(obj)
+                    2 -> copyApiUri(obj, true)
+                    3 -> copyApiUri(obj, false)
+                    4 -> editSchedule(obj)
+                    5 -> deleteSchedule(obj)
+                }
+                true
+            }
+            popup.show()
         }
-
-        // Copy API URIs (Skip / Induce)
-        // trailing spacer already added above; no duplicate
-
-        val btnCopySkip = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        btnCopySkip.text = getString(nethical.digipaws.R.string.copy_skip_uri)
-        btnCopySkip.setOnClickListener { copyApiUri(obj, true) }
-        val lp1 = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp1.marginEnd = (8 * d).toInt()
-        btnCopySkip.layoutParams = lp1
-        actions.addView(btnCopySkip)
-
-        val btnCopyInduce = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        btnCopyInduce.text = getString(nethical.digipaws.R.string.copy_induce_uri)
-        btnCopyInduce.setOnClickListener { copyApiUri(obj, false) }
-        actions.addView(btnCopyInduce)
-
-        val spacer = android.view.View(ctx)
-        spacer.layoutParams = android.widget.LinearLayout.LayoutParams(0, 0, 1f)
-        actions.addView(spacer)
-
-        val btnEdit = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        btnEdit.text = getString(nethical.digipaws.R.string.edit)
-        btnEdit.setOnClickListener { editSchedule(obj) }
-        actions.addView(btnEdit)
-
-        val btnDelete = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        btnDelete.text = getString(nethical.digipaws.R.string.delete)
-        btnDelete.setOnClickListener { deleteSchedule(obj) }
-        actions.addView(btnDelete)
 
         swEnabled.setOnCheckedChangeListener { _, isChecked ->
             obj.put("enabled", isChecked)

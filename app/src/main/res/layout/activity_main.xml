@@ -138,6 +138,14 @@
                     android:layout_marginTop="12dp"
                     android:text="@string/add_schedule" />
 
+                <Button
+                    android:id="@+id/btn_set_phone_lock_password"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/set_phone_lock_password" />
+
                 <LinearLayout
                     android:id="@+id/phone_lock_schedules_container"
                     android:layout_width="match_parent"

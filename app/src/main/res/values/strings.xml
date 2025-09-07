@@ -222,4 +222,16 @@
     <string name="copy_induce_uri">Copy Induce URI</string>
     <string name="copied_skip_uri">Skip URI copied</string>
     <string name="copied_induce_uri">Induce URI copied</string>
+    <string name="quick_tile_subtitle">Quick actions</string>
+    <string name="open_dialer">Open Dialer</string>
+    <string name="emergency_unlock">Emergency unlock</string>
+    <string name="ultra_emergency_unlock">Ultra-emergency unlock</string>
+    <string name="enter_password">Enter password</string>
+    <string name="unlocked_temporarily">Unlocked temporarily</string>
+    <string name="ultra_unlock_not_available">Ultra-emergency already used this month</string>
+    <string name="more">More</string>
+    <string name="set_phone_lock_password">Set Phone Lock password</string>
+    <string name="enter_new_password">Enter new password</string>
+    <string name="confirm">Confirm</string>
+    <string name="password_updated">Password updated</string>
 </resources>

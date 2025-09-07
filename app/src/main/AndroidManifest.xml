@@ -82,6 +82,11 @@
             android:exported="true"
             android:launchMode="singleTask" />
 
+        <activity
+            android:name=".ui.activity.PhoneLockQuickActionsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Digipaws.TransparentDialog" />
+
         <service
             android:name=".services.ViewBlockerService"
             android:exported="true"
@@ -146,6 +151,16 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/general_features_service_config" />
+        </service>
+
+        <service
+            android:name=".tiles.PhoneLockQuickTileService"
+            android:exported="true"
+            android:label="@string/phone_lock"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <receiver

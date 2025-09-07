@@ -1,6 +1,7 @@
 package nethical.digipaws.services
 
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -104,10 +105,7 @@ class GeneralFeaturesService : BaseBlockingService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         super.onAccessibilityEvent(event)
 
-        // If in a locked interval, try to lock immediately when windows change (e.g., after unlock)
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            maybeLockIfScheduled()
-        }
+        // We will evaluate lock after updating the current package below to avoid race conditions
 
         if (isAntiUninstallOn && event?.packageName == "com.android.settings") {
             // Only block when actually inside specific sub-screens, not on Settings home
@@ -147,6 +145,11 @@ class GeneralFeaturesService : BaseBlockingService() {
             }
         } catch (_: Exception) {
         }
+
+        // If in a locked interval, try to lock immediately when windows change (e.g., after unlock)
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && isDeviceUnlocked()) {
+            maybeLockIfScheduled()
+        }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -166,7 +169,6 @@ class GeneralFeaturesService : BaseBlockingService() {
         // Listen to unlock/screen on to re-lock if necessary
         val screenFilter = IntentFilter().apply {
             addAction(Intent.ACTION_USER_PRESENT)
-            addAction(Intent.ACTION_SCREEN_ON)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(screenReceiver, screenFilter, RECEIVER_EXPORTED)
@@ -185,7 +187,11 @@ class GeneralFeaturesService : BaseBlockingService() {
                 when (intent.action) {
                     INTENT_ACTION_REFRESH_ANTI_UNINSTALL -> setupAntiUninstall()
                     INTENT_ACTION_REFRESH_GRAYSCALE -> setupGrayscale()
-                    INTENT_ACTION_REFRESH_PHONE_LOCK -> setupPhoneLock()
+                    INTENT_ACTION_REFRESH_PHONE_LOCK -> {
+                        setupPhoneLock()
+                        // Re-evaluate immediately (used by QS quick actions on dismiss)
+                        maybeLockIfScheduled()
+                    }
                 }
             }
         }
@@ -221,8 +227,29 @@ class GeneralFeaturesService : BaseBlockingService() {
         activeSessions = try { org.json.JSONObject(actStr) } catch (_: Exception) { org.json.JSONObject() }
     }
 
+    private fun isDeviceUnlocked(): Boolean {
+        return try {
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                !km.isDeviceLocked
+            } else {
+                !km.isKeyguardLocked
+            }
+        } catch (_: Exception) {
+            // If we cannot determine, default to true to avoid over-blocking on legitimate use
+            true
+        }
+    }
+
     private fun maybeLockIfScheduled() {
         if (!phoneLockEnabled) return
+        // Temporary bypass (e.g., user opened Dialer from QS tile)
+        val sp = getSharedPreferences("phone_lock", MODE_PRIVATE)
+        val bypassUntil = sp.getLong("temp_bypass_until", 0L)
+        if (System.currentTimeMillis() < bypassUntil) return
+        // Allow exception when system/default dialer is in foreground
+        val pkg = lastPackageName ?: ""
+        if (isDialerPackage(pkg)) return
         if (anyScheduleActiveNow()) {
             // Try Accessibility global lock (API 28+)
             val ok = performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
@@ -234,6 +261,24 @@ class GeneralFeaturesService : BaseBlockingService() {
                 } catch (_: Exception) { }
             }
         }
+    }
+
+    private fun isDialerPackage(pkg: String): Boolean {
+        try {
+            val tm = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            val defDialer = tm?.defaultDialerPackage
+            if (!defDialer.isNullOrEmpty() && pkg == defDialer) return true
+        } catch (_: Exception) { }
+        // Common dialer/phone UI packages across OEMs
+        val known = setOf(
+            "com.google.android.dialer",
+            "com.android.dialer",
+            "com.samsung.android.dialer",
+            "com.miui.contacts",
+            "com.oneplus.dialer",
+            "com.android.incallui",
+        )
+        return known.contains(pkg)
     }
 
     override fun onDestroy() {
