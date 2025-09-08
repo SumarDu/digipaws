@@ -229,6 +229,9 @@
     <string name="enter_password">Enter password</string>
     <string name="unlocked_temporarily">Unlocked temporarily</string>
     <string name="ultra_unlock_not_available">Ultra-emergency already used this month</string>
+    <string name="set_ultra_quota">Set ultra-emergency quota</string>
+    <string name="set_ultra_quota_hint">Current: %1$d</string>
+    <string name="ultra_unlock_quota_exhausted">Ultra-emergency quota exhausted for this month</string>
     <string name="more">More</string>
     <string name="set_phone_lock_password">Set Phone Lock password</string>
     <string name="enter_new_password">Enter new password</string>

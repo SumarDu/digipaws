@@ -67,17 +67,40 @@ class PhoneLockQuickActionsActivity : AppCompatActivity() {
             val auPwd = au.getString("password", null)
             val saved = plPwd ?: auPwd
             if (!saved.isNullOrEmpty() && saved == input) {
-                // Bypass for the rest of the day
-                val endOfDay = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, 23)
-                    set(java.util.Calendar.MINUTE, 59)
-                    set(java.util.Calendar.SECOND, 59)
-                    set(java.util.Calendar.MILLISECOND, 900)
-                }.timeInMillis
-                setBypassUntil(endOfDay)
-                Toast.makeText(this, R.string.unlocked_temporarily, Toast.LENGTH_SHORT).show()
-                actionPerformed = true
-                finish()
+                // Per-schedule emergency unlock until end of day.
+                val activeId = getActiveScheduleIdNow()
+                if (activeId == null) {
+                    Toast.makeText(this, R.string.failed, Toast.LENGTH_SHORT).show()
+                } else {
+                    // Mark skip_today for this schedule id and clear any activeSessions entry
+                    val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
+                    val today = todayKey()
+                    val skipTodayStr = sp.getString("skip_today", "{}")
+                    val skipToday = try { org.json.JSONObject(skipTodayStr) } catch (_: Exception) { org.json.JSONObject() }
+                    skipToday.put(activeId, today)
+                    // Also clear any global temp bypass to avoid suppressing other schedules
+                    sp.edit()
+                        .putString("skip_today", skipToday.toString())
+                        .putLong("temp_bypass_until", 0L)
+                        .apply()
+
+                    // Clear duration session if present
+                    try {
+                        val actStr = sp.getString("active_sessions", "{}")
+                        val act = try { org.json.JSONObject(actStr) } catch (_: Exception) { org.json.JSONObject() }
+                        if (act.has(activeId)) {
+                            act.put(activeId, 0L)
+                            sp.edit().putString("active_sessions", act.toString()).apply()
+                        }
+                    } catch (_: Exception) { }
+
+                    // Ask service to re-evaluate immediately
+                    sendBroadcast(Intent(GeneralFeaturesService.INTENT_ACTION_REFRESH_PHONE_LOCK))
+
+                    Toast.makeText(this, R.string.unlocked_temporarily, Toast.LENGTH_SHORT).show()
+                    actionPerformed = true
+                    finish()
+                }
             } else {
                 Toast.makeText(this, R.string.incorrect_password_please_try_again, Toast.LENGTH_SHORT).show()
             }
@@ -85,14 +108,47 @@ class PhoneLockQuickActionsActivity : AppCompatActivity() {
 
         btnUltra.setOnClickListener {
             val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
-            val last = sp.getLong("ultra_last_ts", 0L)
-            if (isSameCalendarMonth(last, System.currentTimeMillis())) {
-                Toast.makeText(this, R.string.ultra_unlock_not_available, Toast.LENGTH_LONG).show()
+            val now = System.currentTimeMillis()
+            val monthFmt = java.text.SimpleDateFormat("yyyyMM", java.util.Locale.US)
+            val curMonth = monthFmt.format(java.util.Date(now))
+            val storedMonth = sp.getString("ultra_month", "")
+            var used = sp.getInt("ultra_used", 0)
+            val quota = sp.getInt("ultra_quota_per_month", 1)
+            if (storedMonth != curMonth) {
+                used = 0
+            }
+            if (used >= quota) {
+                Toast.makeText(this, R.string.ultra_unlock_quota_exhausted, Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            // Allow 30 minutes bypass without password
-            setBypassMinutes(30)
-            sp.edit().putLong("ultra_last_ts", System.currentTimeMillis()).apply()
+
+            val activeId = getActiveScheduleIdNow()
+            if (activeId == null) {
+                Toast.makeText(this, R.string.failed, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val today = todayKey()
+            val skipTodayStr = sp.getString("skip_today", "{}")
+            val skipToday = try { org.json.JSONObject(skipTodayStr) } catch (_: Exception) { org.json.JSONObject() }
+            skipToday.put(activeId, today)
+            // Clear any global bypass and any active session for this id
+            val actStr = sp.getString("active_sessions", "{}")
+            val act = try { org.json.JSONObject(actStr) } catch (_: Exception) { org.json.JSONObject() }
+            if (act.has(activeId)) {
+                act.put(activeId, 0L)
+            }
+            sp.edit()
+                .putString("skip_today", skipToday.toString())
+                .putString("ultra_month", curMonth)
+                .putInt("ultra_used", used + 1)
+                .putString("active_sessions", act.toString())
+                .putLong("temp_bypass_until", 0L)
+                .apply()
+
+            // Trigger immediate re-evaluation
+            sendBroadcast(Intent(GeneralFeaturesService.INTENT_ACTION_REFRESH_PHONE_LOCK))
+
             Toast.makeText(this, R.string.unlocked_temporarily, Toast.LENGTH_SHORT).show()
             actionPerformed = true
             finish()
@@ -156,5 +212,86 @@ class PhoneLockQuickActionsActivity : AppCompatActivity() {
     private fun clearBypass() {
         val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
         sp.edit().putLong("temp_bypass_until", 0L).apply()
+    }
+
+    private fun todayKey(): String {
+        val fmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+        return fmt.format(java.util.Date())
+    }
+
+    private fun dayOfWeekBit(cal: java.util.Calendar): Int {
+        return when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.SUNDAY -> 0
+            java.util.Calendar.MONDAY -> 1
+            java.util.Calendar.TUESDAY -> 2
+            java.util.Calendar.WEDNESDAY -> 3
+            java.util.Calendar.THURSDAY -> 4
+            java.util.Calendar.FRIDAY -> 5
+            java.util.Calendar.SATURDAY -> 6
+            else -> 0
+        }
+    }
+
+    private fun isTimeInRange(now: Int, start: Int, end: Int): Boolean {
+        return if (start <= end) {
+            now in start..end
+        } else {
+            now >= start || now <= end
+        }
+    }
+
+    private fun getActiveScheduleIdNow(): String? {
+        val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
+        val schedulesStr = sp.getString("schedules", "[]")
+        val schedules = try { org.json.JSONArray(schedulesStr) } catch (_: Exception) { org.json.JSONArray() }
+        val actStr = sp.getString("active_sessions", "{}")
+        val activeSessions = try { org.json.JSONObject(actStr) } catch (_: Exception) { org.json.JSONObject() }
+        val cal = java.util.Calendar.getInstance()
+        val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val dowBit = dayOfWeekBit(cal)
+        val today = todayKey()
+
+        // 1) Active duration sessions first
+        try {
+            val keys = activeSessions.keys()
+            while (keys.hasNext()) {
+                val id = keys.next()
+                val endAt = activeSessions.optLong(id, 0L)
+                if (endAt > System.currentTimeMillis()) {
+                    // Confirm schedule constraints if it exists
+                    for (i in 0 until schedules.length()) {
+                        val obj = schedules.optJSONObject(i) ?: continue
+                        if (obj.optString("id") == id) {
+                            if (!obj.optBoolean("enabled", true)) break
+                            val daysMask = obj.optInt("daysMask", 0)
+                            if (daysMask == 0 || ((daysMask shr dowBit) and 1) == 1) {
+                                return id
+                            }
+                            break
+                        }
+                    }
+                    // If schedule not found, still return id (be conservative)
+                    return id
+                }
+            }
+        } catch (_: Exception) { }
+
+        // 2) Interval schedules currently active
+        // Respect skip_today: if already skipped today, do not treat as active
+        val skipTodayStr = sp.getString("skip_today", "{}")
+        val skipToday = try { org.json.JSONObject(skipTodayStr) } catch (_: Exception) { org.json.JSONObject() }
+        for (i in 0 until schedules.length()) {
+            val obj = schedules.optJSONObject(i) ?: continue
+            if (!obj.optBoolean("enabled", true)) continue
+            if (obj.optString("mode") != "interval") continue
+            val id = obj.optString("id")
+            if (today == skipToday.optString(id, "")) continue
+            val daysMask = obj.optInt("daysMask", 0)
+            if (daysMask != 0 && ((daysMask shr dowBit) and 1) == 0) continue
+            val start = obj.optInt("startMin", 0)
+            val end = obj.optInt("endMin", 0)
+            if (isTimeInRange(nowMin, start, end)) return id
+        }
+        return null
     }
 }

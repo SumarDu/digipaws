@@ -161,6 +161,31 @@ class MainActivity : AppCompatActivity() {
             promptSetPhoneLockPassword()
         }
 
+        // Set ultra-emergency quota per month
+        binding.root.findViewById<android.widget.Button>(nethical.digipaws.R.id.btn_set_ultra_quota)?.setOnClickListener {
+            val sp = getSharedPreferences("phone_lock", Context.MODE_PRIVATE)
+            val current = sp.getInt("ultra_quota_per_month", 1)
+            val input = android.widget.EditText(this).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                hint = getString(nethical.digipaws.R.string.set_ultra_quota_hint, current)
+            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(nethical.digipaws.R.string.set_ultra_quota)
+                .setView(input)
+                .setPositiveButton(nethical.digipaws.R.string.confirm) { _, _ ->
+                    val txt = input.text?.toString()?.trim().orEmpty()
+                    val n = txt.toIntOrNull()
+                    if (n == null || n < 0) {
+                        android.widget.Toast.makeText(this, nethical.digipaws.R.string.failed, android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        sp.edit().putInt("ultra_quota_per_month", n).apply()
+                        android.widget.Toast.makeText(this, nethical.digipaws.R.string.password_updated, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton(nethical.digipaws.R.string.cancel, null)
+                .show()
+        }
+
         // Initial render
         renderPhoneLockSchedules()
     }

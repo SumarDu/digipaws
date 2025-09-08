@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import nethical.digipaws.Constants
@@ -87,6 +89,20 @@ class GeneralFeaturesService : BaseBlockingService() {
 
     private var lastPackageName: String? = null // Store the last active app's package name
     private var lastClassName: String? = null   // Store the last window class name
+    private var lastEvaluateAt: Long = 0L
+    private val evalHandler: Handler = Handler(Looper.getMainLooper())
+    private val periodicEval = object : Runnable {
+        override fun run() {
+            try {
+                if (phoneLockEnabled && isDeviceUnlocked()) {
+                    android.util.Log.d("PhoneLock", "Periodic evaluate")
+                    maybeLockIfScheduled()
+                }
+            } finally {
+                evalHandler.postDelayed(this, 5_000L)
+            }
+        }
+    }
 
     private var selectedGrayScaleApps: HashSet<String> = hashSetOf()
     private var grayScaleMode = Constants.GRAYSCALE_MODE_ONLY_SELECTED
@@ -106,6 +122,9 @@ class GeneralFeaturesService : BaseBlockingService() {
         super.onAccessibilityEvent(event)
 
         // We will evaluate lock after updating the current package below to avoid race conditions
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            android.util.Log.d("PhoneLock", "WINDOW_STATE_CHANGED from=${lastPackageName} -> ${event.packageName} class=${event.className}")
+        }
 
         if (isAntiUninstallOn && event?.packageName == "com.android.settings") {
             // Only block when actually inside specific sub-screens, not on Settings home
@@ -148,7 +167,20 @@ class GeneralFeaturesService : BaseBlockingService() {
 
         // If in a locked interval, try to lock immediately when windows change (e.g., after unlock)
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && isDeviceUnlocked()) {
+            android.util.Log.d("PhoneLock", "Evaluating lock on window change; deviceUnlocked=true")
             maybeLockIfScheduled()
+        } else if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            android.util.Log.d("PhoneLock", "Skip evaluate: deviceUnlocked=false")
+        }
+
+        // Extra safety: also evaluate on content/windows changes with debounce (1s)
+        val t = System.currentTimeMillis()
+        if (event != null && (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED || event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) {
+            if (isDeviceUnlocked() && t - lastEvaluateAt > 1_000L) {
+                android.util.Log.d("PhoneLock", "Evaluating on content/windows change (debounced)")
+                lastEvaluateAt = t
+                maybeLockIfScheduled()
+            }
         }
     }
 
@@ -178,6 +210,9 @@ class GeneralFeaturesService : BaseBlockingService() {
         setupAntiUninstall()
         setupGrayscale()
         setupPhoneLock()
+        // Start periodic evaluation to avoid missed events
+        evalHandler.removeCallbacks(periodicEval)
+        evalHandler.postDelayed(periodicEval, 5_000L)
     }
 
     private val refreshReceiver = object : BroadcastReceiver() {
@@ -188,6 +223,7 @@ class GeneralFeaturesService : BaseBlockingService() {
                     INTENT_ACTION_REFRESH_ANTI_UNINSTALL -> setupAntiUninstall()
                     INTENT_ACTION_REFRESH_GRAYSCALE -> setupGrayscale()
                     INTENT_ACTION_REFRESH_PHONE_LOCK -> {
+                        android.util.Log.d("PhoneLock", "Received REFRESH_PHONE_LOCK, evaluating now")
                         setupPhoneLock()
                         // Re-evaluate immediately (used by QS quick actions on dismiss)
                         maybeLockIfScheduled()
@@ -242,24 +278,43 @@ class GeneralFeaturesService : BaseBlockingService() {
     }
 
     private fun maybeLockIfScheduled() {
-        if (!phoneLockEnabled) return
+        if (!phoneLockEnabled) {
+            android.util.Log.d("PhoneLock", "maybeLock: disabled")
+            return
+        }
         // Temporary bypass (e.g., user opened Dialer from QS tile)
         val sp = getSharedPreferences("phone_lock", MODE_PRIVATE)
         val bypassUntil = sp.getLong("temp_bypass_until", 0L)
-        if (System.currentTimeMillis() < bypassUntil) return
+        if (System.currentTimeMillis() < bypassUntil) {
+            val left = bypassUntil - System.currentTimeMillis()
+            android.util.Log.d("PhoneLock", "maybeLock: bypass active left=${left}ms")
+            return
+        }
         // Allow exception when system/default dialer is in foreground
         val pkg = lastPackageName ?: ""
-        if (isDialerPackage(pkg)) return
-        if (anyScheduleActiveNow()) {
+        if (isDialerPackage(pkg)) {
+            android.util.Log.d("PhoneLock", "maybeLock: dialer in foreground pkg=${pkg}, skip lock")
+            return
+        }
+        val unlocked = isDeviceUnlocked()
+        android.util.Log.d("PhoneLock", "maybeLock: deviceUnlocked=${unlocked} pkg=${pkg}")
+        if (!unlocked) return
+        val active = anyScheduleActiveNow()
+        android.util.Log.d("PhoneLock", "maybeLock: scheduleActive=${active}")
+        if (active) {
             // Try Accessibility global lock (API 28+)
             val ok = performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
+            android.util.Log.d("PhoneLock", "maybeLock: performGlobalAction lock result=${ok}")
             if (!ok) {
                 // Fallback: DevicePolicyManager lock (requires active admin)
                 try {
                     val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
                     dpm.lockNow()
+                    android.util.Log.d("PhoneLock", "maybeLock: dpm.lockNow() invoked")
                 } catch (_: Exception) { }
             }
+        } else {
+            android.util.Log.d("PhoneLock", "maybeLock: schedule not active, no lock")
         }
     }
 
@@ -282,6 +337,7 @@ class GeneralFeaturesService : BaseBlockingService() {
     }
 
     override fun onDestroy() {
+        evalHandler.removeCallbacks(periodicEval)
         try { unregisterReceiver(refreshReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         super.onDestroy()

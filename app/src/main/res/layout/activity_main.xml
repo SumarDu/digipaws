@@ -146,6 +146,14 @@
                     android:layout_marginTop="8dp"
                     android:text="@string/set_phone_lock_password" />
 
+                <Button
+                    android:id="@+id/btn_set_ultra_quota"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/set_ultra_quota" />
+
                 <LinearLayout
                     android:id="@+id/phone_lock_schedules_container"
                     android:layout_width="match_parent"
