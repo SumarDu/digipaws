@@ -222,6 +222,7 @@
     <string name="copy_induce_uri">Copy Induce URI</string>
     <string name="copied_skip_uri">Skip URI copied</string>
     <string name="copied_induce_uri">Induce URI copied</string>
+    <string name="inducible_label">Inducible (inactive by default, activated via URI)</string>
     <string name="quick_tile_subtitle">Quick actions</string>
     <string name="open_dialer">Open Dialer</string>
     <string name="emergency_unlock">Emergency unlock</string>

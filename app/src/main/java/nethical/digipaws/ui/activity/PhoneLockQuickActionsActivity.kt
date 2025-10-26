@@ -280,12 +280,18 @@ class PhoneLockQuickActionsActivity : AppCompatActivity() {
         // Respect skip_today: if already skipped today, do not treat as active
         val skipTodayStr = sp.getString("skip_today", "{}")
         val skipToday = try { org.json.JSONObject(skipTodayStr) } catch (_: Exception) { org.json.JSONObject() }
+        val forceTodayStr = sp.getString("force_today", "{}")
+        val forceToday = try { org.json.JSONObject(forceTodayStr) } catch (_: Exception) { org.json.JSONObject() }
         for (i in 0 until schedules.length()) {
             val obj = schedules.optJSONObject(i) ?: continue
             if (!obj.optBoolean("enabled", true)) continue
             if (obj.optString("mode") != "interval") continue
             val id = obj.optString("id")
             if (today == skipToday.optString(id, "")) continue
+            // If inducible, only treat as active if forced today
+            if (obj.optBoolean("inducible", false)) {
+                if (today != forceToday.optString(id, "")) continue
+            }
             val daysMask = obj.optInt("daysMask", 0)
             if (daysMask != 0 && ((daysMask shr dowBit) and 1) == 0) continue
             val start = obj.optInt("startMin", 0)

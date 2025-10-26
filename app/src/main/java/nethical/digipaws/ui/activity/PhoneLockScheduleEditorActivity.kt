@@ -21,6 +21,7 @@ class PhoneLockScheduleEditorActivity : AppCompatActivity() {
     private lateinit var spDuration: Spinner
     private lateinit var btnStartTime: Button
     private lateinit var btnEndTime: Button
+    private lateinit var cbInducible: CheckBox
     private lateinit var btnSave: Button
 
     private var startMin: Int = 0
@@ -40,6 +41,7 @@ class PhoneLockScheduleEditorActivity : AppCompatActivity() {
         spDuration = findViewById(R.id.spDuration)
         btnStartTime = findViewById(R.id.btnStartTime)
         btnEndTime = findViewById(R.id.btnEndTime)
+        cbInducible = findViewById(R.id.cbInducible)
         btnSave = findViewById(R.id.btnSave)
 
         setupDurationSpinner()
@@ -135,6 +137,7 @@ class PhoneLockScheduleEditorActivity : AppCompatActivity() {
         } else {
             obj.put("startMin", startMin)
             obj.put("endMin", endMin)
+            obj.put("inducible", cbInducible.isChecked)
         }
 
         val prefs = getSharedPreferences("phone_lock", MODE_PRIVATE)
@@ -174,6 +177,7 @@ class PhoneLockScheduleEditorActivity : AppCompatActivity() {
                     endMin = it.optInt("endMin", 0)
                     btnStartTime.text = String.format("%02d:%02d", startMin/60, startMin%60)
                     btnEndTime.text = String.format("%02d:%02d", endMin/60, endMin%60)
+                    cbInducible.isChecked = it.optBoolean("inducible", false)
                 } else {
                     val d = it.optInt("durationMin", 15)
                     val list = intArrayOf(5,10,15,20,30,40,60,120)

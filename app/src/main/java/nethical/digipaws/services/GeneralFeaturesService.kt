@@ -374,15 +374,24 @@ class GeneralFeaturesService : BaseBlockingService() {
             }
         } catch (_: Exception) { }
 
-        // Forced today overrides (any matching id forces lock today regardless of time)
+        // Forced today overrides (only for inducible interval schedules)
         try {
             val it = forceToday.keys()
             while (it.hasNext()) {
                 val id = it.next()
                 if (today == forceToday.optString(id, "")) {
-                    // also ensure schedule still exists and is enabled
                     val sch = findScheduleById(id)
-                    if (sch == null || sch.optBoolean("enabled", true)) return true
+                    if (sch != null && sch.optBoolean("enabled", true) && sch.optString("mode") == "interval") {
+                        // Check if inducible and if so, respect the time range
+                        if (sch.optBoolean("inducible", false)) {
+                            val daysMask = sch.optInt("daysMask", 0)
+                            if (daysMask == 0 || ((daysMask shr dowBit) and 1) == 1) {
+                                val start = sch.optInt("startMin", 0)
+                                val end = sch.optInt("endMin", 0)
+                                if (isTimeInRange(nowMin, start, end)) return true
+                            }
+                        }
+                    }
                 }
             }
         } catch (_: Exception) { }
@@ -392,9 +401,12 @@ class GeneralFeaturesService : BaseBlockingService() {
             val obj = schedulesJson.optJSONObject(i) ?: continue
             if (!obj.optBoolean("enabled", true)) continue
             if (obj.optString("mode") != "interval") continue
-            // Skip if user requested skip for today
             val sid = obj.optString("id")
             if (today == skipToday.optString(sid, "")) continue
+            // If inducible, only activate if forced today
+            if (obj.optBoolean("inducible", false)) {
+                if (today != forceToday.optString(sid, "")) continue
+            }
             val daysMask = obj.optInt("daysMask", 0)
             if (daysMask != 0 && ((daysMask shr dowBit) and 1) == 0) continue
             val start = obj.optInt("startMin", 0)
@@ -402,8 +414,6 @@ class GeneralFeaturesService : BaseBlockingService() {
             if (isTimeInRange(nowMin, start, end)) return true
         }
 
-        // Cleanup expired duration sessions
-        pruneExpiredSessions()
         return false
     }
 

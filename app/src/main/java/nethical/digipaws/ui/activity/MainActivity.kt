@@ -98,9 +98,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var options: ActivityOptionsCompat
     private var isDeviceAdminOn = false
     private var isAntiUninstallOn = false
-
+    
+    private var isAppBlockerOn = false
+    private var isViewBlockerOn = false
+    private var isKeywordBlockerOn = false
+    private var isUsageTrackerOn = false
     private var isGeneralSettingsOn = false
     private var isDisplayOverOtherAppsOn = false
+    private var isConfiguringBlocked = false
 
     private var isShizukuBinderRecieved = false
     private val BINDER_RECEIVED_LISTENER = OnBinderReceivedListener {
@@ -241,6 +246,10 @@ class MainActivity : AppCompatActivity() {
 
         val mode = obj.optString("mode")
         return if (mode == "interval") {
+            // If inducible, only active if forced today (already checked above)
+            if (obj.optBoolean("inducible", false)) {
+                return false
+            }
             val cal = java.util.Calendar.getInstance()
             val bit = dayOfWeekBit(cal)
             val daysMask = obj.optInt("daysMask", 0)
@@ -308,6 +317,7 @@ class MainActivity : AppCompatActivity() {
 
         val swEnabled = com.google.android.material.materialswitch.MaterialSwitch(ctx)
         swEnabled.isChecked = obj.optBoolean("enabled", true)
+        swEnabled.isEnabled = !isConfiguringBlocked
         titleRow.addView(swEnabled)
 
         val tvSummary = android.widget.TextView(ctx)
@@ -350,6 +360,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         swEnabled.setOnCheckedChangeListener { _, isChecked ->
+            if (isConfiguringBlocked) {
+                // Revert UI change and inform user
+                swEnabled.isChecked = !isChecked
+                android.widget.Toast.makeText(ctx, nethical.digipaws.R.string.failed, android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnCheckedChangeListener
+            }
             obj.put("enabled", isChecked)
             upsertSchedule(obj)
         }
@@ -471,6 +487,62 @@ class MainActivity : AppCompatActivity() {
         showDonationDialog()
     }
 
+    private fun applyConfiguringBlockedState(isBlocked: Boolean) {
+        // Block all UI elements except "Remove Anti-uninstall" button
+        val isEnabled = !isBlocked
+        
+        binding.apply {
+            // App Blocker settings
+            selectBlockedApps.isEnabled = isEnabled && isAppBlockerOn
+            btnConfigAppblockerWarning.isEnabled = isEnabled && isAppBlockerOn
+            appBlockerSelectCheatHours.isEnabled = isEnabled && isAppBlockerOn
+            
+            // View Blocker settings
+            btnConfigViewblockerCheatHours.isEnabled = isEnabled && isViewBlockerOn
+            btnConfigViewblockerWarning.isEnabled = isEnabled && isViewBlockerOn
+            
+            // Keyword Blocker settings
+            selectBlockedKeywords.isEnabled = isEnabled && isKeywordBlockerOn
+            btnManagePreinstalledKeywords.isEnabled = isEnabled && isKeywordBlockerOn
+            btnManageKeywordBlocker.isEnabled = isEnabled && isKeywordBlockerOn
+            
+            // Usage Tracker settings
+            selectReelUsageStats.isEnabled = isEnabled && isUsageTrackerOn
+            btnSelectAppsToShowOverlay.isEnabled = isEnabled && isUsageTrackerOn
+            btnConfigTracker.isEnabled = isEnabled && isUsageTrackerOn
+            selectAppUsageStats.isEnabled = isEnabled
+            
+            // Focus Mode settings
+            startFocusMode.isEnabled = isEnabled && isAppBlockerOn
+            selectFocusBlockedApps.isEnabled = isEnabled && isAppBlockerOn
+            autoFocus.isEnabled = isEnabled && isAppBlockerOn
+            
+            // Monochrome/Grayscale settings
+            selectMonochromeApps.isEnabled = isEnabled
+            selectPinnedApps.isEnabled = isEnabled
+            
+            
+            // Phone Lock settings
+            switchEnablePhoneLock.isEnabled = isEnabled
+            btnConfigurePhoneLock.isEnabled = isEnabled
+            btnSetPhoneLockPassword?.isEnabled = isEnabled
+            // Ultra-emergency quota button
+            root.findViewById<android.widget.Button>(nethical.digipaws.R.id.btn_set_ultra_quota)?.isEnabled = isEnabled
+            
+            // Anti-uninstall toggles
+            switchBlockAppsSettings.isEnabled = isEnabled
+            switchBlockDnsSettings.isEnabled = isEnabled
+            switchBlockLanguageSettings.isEnabled = isEnabled
+            
+            // Anti-uninstall card chip - block setup if already on
+            antiUninstallCardChip.isEnabled = isEnabled && !isAntiUninstallOn
+            
+            // DON'T block btnUnlockAntiUninstall - it should always be enabled when anti-uninstall is on
+        }
+        // Rebuild schedule cards to reflect disabled/enabled state of toggles
+        renderPhoneLockSchedules()
+    }
+
     private fun setupAntiUninstallToggles() {
         val sp = getSharedPreferences("anti_uninstall", Context.MODE_PRIVATE)
 
@@ -504,7 +576,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         // Ensure UI and permissions refresh
-        renderPhoneLockSchedules()
         checkPermissions()
     }
 
@@ -859,13 +930,13 @@ class MainActivity : AppCompatActivity() {
 
         isDisplayOverOtherAppsOn = Settings.canDrawOverlays(this)
         lifecycleScope.launch {
-            val isAppBlockerOn =
+            isAppBlockerOn =
                 withContext(Dispatchers.IO) { isAccessibilityServiceEnabled(AppBlockerService::class.java) }
-            val isViewBlockerOn =
+            isViewBlockerOn =
                 withContext(Dispatchers.IO) { isAccessibilityServiceEnabled(ViewBlockerService::class.java) }
-            val isKeywordBlockerOn =
+            isKeywordBlockerOn =
                 withContext(Dispatchers.IO) { isAccessibilityServiceEnabled(KeywordBlockerService::class.java) }
-            val isUsageTrackerOn =
+            isUsageTrackerOn =
                 withContext(Dispatchers.IO) { isAccessibilityServiceEnabled(UsageTrackingService::class.java) }
             isGeneralSettingsOn =
                 withContext(Dispatchers.IO) { isAccessibilityServiceEnabled(GeneralFeaturesService::class.java) }
@@ -881,8 +952,11 @@ class MainActivity : AppCompatActivity() {
             isAntiUninstallOn = antiUninstallInfo.getBoolean("is_anti_uninstall_on", false)
             val doesAntiUninstallBlockView =
                 antiUninstallInfo.getBoolean("is_configuring_blocked", false)
+            isConfiguringBlocked = doesAntiUninstallBlockView && isAntiUninstallOn
 
             withContext(Dispatchers.Main) {
+                // Re-render schedules early so toggles reflect current blocked state
+                renderPhoneLockSchedules()
                 // App Blocker
                 updateChip(isAppBlockerOn, binding.appBlockerStatusChip, binding.appBlockerWarning)
                 binding.apply {
@@ -976,17 +1050,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (doesAntiUninstallBlockView && isAntiUninstallOn) {
-                    binding.apply {
-                        btnConfigAppblockerWarning.isEnabled = false
-                        btnManagePreinstalledKeywords.isEnabled = false
-                        btnManageKeywordBlocker.isEnabled = false
-                        btnConfigViewblockerCheatHours.isEnabled = false
-                        selectBlockedKeywords.isEnabled = false
-                        selectBlockedApps.isEnabled = false
-                        appBlockerSelectCheatHours.isEnabled = false
-                        btnConfigViewblockerWarning.isEnabled = false
-                        startFocusMode.isEnabled = false
-                    }
+                    applyConfiguringBlockedState(true)
                 }
                 if (isAppBlockerOn) {
                     val isFocusedModeOn = savedPreferencesLoader.getFocusModeData().isTurnedOn
@@ -1326,6 +1390,8 @@ class MainActivity : AppCompatActivity() {
                         .show()
                     antiUninstallInfo.edit().putBoolean("is_anti_uninstall_on", false).commit()
                     sendRefreshRequest(GeneralFeaturesService.INTENT_ACTION_REFRESH_ANTI_UNINSTALL)
+                    applyConfiguringBlockedState(false)
+                    checkPermissions()
 
                 } else {
 
@@ -1353,6 +1419,7 @@ class MainActivity : AppCompatActivity() {
                             antiUninstallInfo.edit().putBoolean("is_anti_uninstall_on", false)
                                 .commit()
                             sendRefreshRequest(GeneralFeaturesService.INTENT_ACTION_REFRESH_ANTI_UNINSTALL)
+                            applyConfiguringBlockedState(false)
 
                             Snackbar.make(
                                 binding.root,
