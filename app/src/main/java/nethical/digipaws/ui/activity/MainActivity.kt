@@ -333,6 +333,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnMore = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
         btnMore.text = getString(nethical.digipaws.R.string.more)
+        btnMore.isEnabled = !isConfiguringBlocked
         actions.addView(btnMore)
 
         btnMore.setOnClickListener { v ->
